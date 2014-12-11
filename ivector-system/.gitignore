@@ -1,0 +1,9 @@
+data/lbl
+data/prm
+data/wav
+mat/
+iv/
+log/
+gmm/
+res
+*.bak
