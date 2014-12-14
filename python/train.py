@@ -10,6 +10,7 @@ import gflags
 FLAGS = gflags.FLAGS
 gflags.DEFINE_string('iv_path', '../ivector-system/iv/raw_512', 'path to iv')
 gflags.DEFINE_string('task', 'train', 'train or dump(then test)')
+gflags.DEFINE_string('model', 'bias', 'bias or projection')
 
 def load_data(fname):
     with open(fname) as fin:
@@ -44,33 +45,41 @@ def do_train():
 
     print 'N %d Dim %d' % (N, dim)
 
-    # theta = theano.shared(value=np.zeros(dim*2+2*dim*dim, dtype=theano.config.floatX))
-    theta = theano.shared(value=np.zeros(dim*2, dtype=theano.config.floatX))
-    print theta.type
+    if FLAGS.model == 'bias':
+        theta = theano.shared(value=np.zeros(dim*2, dtype=theano.config.floatX))
+        b0 = theta[:dim].reshape((dim,))
+        b0_init = np.zeros((dim))
+        b0.name = 'b0'
+        b1 = theta[dim: 2*dim].reshape((dim, ))
+        b1_init = np.zeros((dim))
+        b1.name = 'b1'
+        theta.set_value(np.concatenate((b0_init, b1_init)))
+        diff = T.sum((X0 + b0 - X2) ** 2) + T.sum((X1 + b1 - X2) ** 2)
+    elif FLAGS.model == 'projection':
+        theta = theano.shared(value=np.zeros(dim*2+2*dim*dim, dtype=theano.config.floatX))
+        W0 = theta[0:dim*dim].reshape((dim,dim))
+        W0_init = np.identity(dim)
+        W0.name = 'W0'
+        b0 = theta[dim*dim:dim*dim+dim].reshape((dim,))
+        b0_init = np.zeros((dim))
+        b0.name = 'b0'
+        W1 = theta[dim*dim+dim: 2*dim*dim+dim].reshape((dim,dim))
+        W1_init = np.identity(dim)
+        W1.name = 'W1'
+        b1 = theta[2*dim*dim+dim:].reshape((dim, ))
+        b1_init = np.zeros((dim))
+        b1.name = 'b1'
 
-#    W0 = theta[0:dim*dim].reshape((dim,dim))
-#    W0_init = np.identity(dim, dtype=theano.config.floatX)
-#    W0.name = 'W0'
-    #b0 = theta[dim*dim: dim*dim+dim].reshape((dim,))
-    b0 = theta[: dim].reshape((dim,))
-    b0_init = np.zeros((dim))
-    b0.name = 'b0'
-#    W1 = theta[dim*dim+dim: 2*dim*dim+dim].reshape((dim,dim))
-#    W1_init = np.identity(dim, dtype=theano.config.floatX)
-#    W1.name = 'W1'
-    b1 = theta[dim: 2*dim].reshape((dim, ))
-    b1_init = np.zeros((dim))
-    b1.name = 'b1'
+        theta.set_value(np.concatenate((W0_init.ravel(), b0_init, W1_init.ravel(), b1_init)))
 
-    # theta.set_value(np.concatenate((W0_init.ravel(), b0_init, W1_init.ravel(), b1_init)))
-    theta.set_value(np.concatenate((b0_init, b1_init)))
+        diff = T.sum((T.dot(X0, W0) + b0 - X2) ** 2) + T.sum((T.dot(X1, W1) + b1 - X2) ** 2)
+    else:
+        logging.info('Unknown model: %s' % FLAGS.model)
 
-    # diff = T.sum((T.dot(X0, W0) + b0 - X2) ** 2) + T.sum((T.dot(X1, W1) + b1 - X2) ** 2)
-    diff = T.sum((X0 + b0 - X2) ** 2) + T.sum((X1 + b1 - X2) ** 2)
-    loss = diff / N
 #    for arg in [W0, b0, W1, b1]:
 #        loss += T.sum(arg**2) * 0.5
 
+    loss = diff / N
     loss_func = theano.function([], loss)
     grad_func = theano.function([], T.grad(loss, theta))
 
@@ -94,17 +103,33 @@ def do_train():
 
 #    print W0.eval()
 #    print X2[0], np.dot(X0[0], W0.eval()) + b0.eval()
-    print X2[0], X0[0] + b0.eval()
+#    print X2[0], X0[0] + b0.eval()
 
     np.save('theta', theta.get_value())
 
 def do_test():
     theta = np.load('theta.npy')
-    dim = len(theta)/2
-    #W0 = theta[0:dim]
-    b0 = theta[:dim]
-    #W1 = theta[dim*2:dim*3]
-    b1 = theta[dim:dim*2]
+    if FLAGS.model == 'bias':
+        dim = len(theta)/2
+        #W0 = theta[0:dim]
+        b0 = theta[:dim]
+        #W1 = theta[dim*2:dim*3]
+        b1 = theta[dim:dim*2]
+        transform0 = lambda iv: iv + b0
+        transform1 = lambda iv: iv + b1
+    elif FLAGS.model == 'projection':
+        for i in xrange(1000):
+            if i*i*2 + 2*i == len(theta):
+                dim = i
+                break
+        W0 = theta[0:dim*dim].reshape((dim,dim))
+        b0 = theta[dim*dim:dim*dim+dim].reshape((dim,))
+        W1 = theta[dim*dim+dim: 2*dim*dim+dim].reshape((dim,dim))
+        b1 = theta[2*dim*dim+dim:].reshape((dim, ))
+        transform0 = lambda iv: np.dot(W0, iv) + b0
+        transform1 = lambda iv: np.dot(W1, iv) + b1
+    else:
+        assert False
 
     with open('./all_speakers') as fin:
         speakers = [x.strip() for x in fin]
@@ -127,16 +152,16 @@ def do_test():
             else:
                 dim = len(iv)
             if label == '01':
-                iv = iv + b0
+                iv = transform0(iv)
                 #iv = before
             elif label == '03':
-                iv = iv + b1
+                iv = transform1(iv)
                 #iv = before
             else:
                 before = iv
             dump_iv('%s_new/%s_%s.y' % (FLAGS.iv_path, speaker, label), iv)
 
-    logging.info('Done.')
+    logging.info('Dumped new ivectors to %s_new.' % (FLAGS.iv_path))
 
 def main(argv):
     argv = FLAGS(argv)
