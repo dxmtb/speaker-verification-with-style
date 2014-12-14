@@ -10,7 +10,7 @@ import gflags
 FLAGS = gflags.FLAGS
 gflags.DEFINE_string('iv_path', '../ivector-system/iv/raw_512', 'path to iv')
 gflags.DEFINE_string('task', 'train', 'train or dump(then test)')
-gflags.DEFINE_string('model', 'bias', 'bias or projection')
+gflags.DEFINE_string('model', 'linear', 'bias or projection')
 
 def load_data(fname):
     with open(fname) as fin:
@@ -73,6 +73,24 @@ def do_train():
         theta.set_value(np.concatenate((W0_init.ravel(), b0_init, W1_init.ravel(), b1_init)))
 
         diff = T.sum((T.dot(X0, W0) + b0 - X2) ** 2) + T.sum((T.dot(X1, W1) + b1 - X2) ** 2)
+    elif FLAGS.model == 'linear':
+        theta = theano.shared(value=np.zeros(dim*4, dtype=theano.config.floatX))
+        W0 = theta[0:dim].reshape((dim,))
+        W0_init = np.ones((dim,))
+        W0.name = 'W0'
+        b0 = theta[dim:dim*2].reshape((dim,))
+        b0_init = np.zeros((dim))
+        b0.name = 'b0'
+        W1 = theta[dim*2: dim*3].reshape((dim,))
+        W1_init = np.ones((dim,))
+        W1.name = 'W1'
+        b1 = theta[dim*3:].reshape((dim, ))
+        b1_init = np.zeros((dim))
+        b1.name = 'b1'
+
+        theta.set_value(np.concatenate((W0_init.ravel(), b0_init, W1_init.ravel(), b1_init)))
+
+        diff = T.sum((X0 * W0 + b0 - X2) ** 2) + T.sum((X1 * W1 + b1 - X2) ** 2)
     else:
         logging.info('Unknown model: %s' % FLAGS.model)
 
@@ -97,9 +115,9 @@ def do_train():
         epoch[0] += 1
         logging.info('epoch %d, loss %f' % (epoch[0], train_fn(theta_value)))
 
-    fmin(train_fn, fprime=train_fn_grad, x0=theta.get_value(), callback=callback, disp=0)
+    fmin(train_fn, fprime=train_fn_grad, x0=theta.get_value(), disp=0)
 
-    print theta.get_value(), grad_func(), loss_func()
+    print loss_func()
 
 #    print W0.eval()
 #    print X2[0], np.dot(X0[0], W0.eval()) + b0.eval()
@@ -128,6 +146,14 @@ def do_test():
         b1 = theta[2*dim*dim+dim:].reshape((dim, ))
         transform0 = lambda iv: np.dot(W0, iv) + b0
         transform1 = lambda iv: np.dot(W1, iv) + b1
+    elif FLAGS.model == 'linear':
+        dim = len(theta)/4
+        W0 = theta[0:dim].reshape((dim,))
+        b0 = theta[dim:dim*2].reshape((dim,))
+        W1 = theta[dim*2: dim*3].reshape((dim,))
+        b1 = theta[dim*3:].reshape((dim, ))
+        transform0 = lambda iv: W0 * iv + b0
+        transform1 = lambda iv: W1 * iv + b1
     else:
         assert False
 

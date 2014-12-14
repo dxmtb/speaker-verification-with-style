@@ -4,8 +4,6 @@ from sklearn.metrics import roc_curve, auc
 
 speakers = {}
 
-print sys.argv
-
 with open(sys.argv[2]) as fin:
     for line in fin:
         data = line.strip().split()
@@ -47,16 +45,19 @@ for i in xrange(len(fpr)):
         EER = tpr[i]
         best = abs(1-fpr[i]-tpr[i])
 
-import pylab as pl
-import os
-# Plot ROC curve
-pl.clf()
-pl.plot(fpr, tpr, label='(EER = %0.4f area = %0.4f)' % (EER, roc_auc))
-pl.plot([0, 1], [1, 0], 'k--')
-pl.xlim([0.0, 1.0])
-pl.ylim([0.0, 1.0])
-pl.xlabel('False Positive Rate')
-pl.ylabel('True Positive Rate')
-pl.title('Receiver operating characteristic example')
-pl.legend(loc="lower right")
-pl.show()
+print 'EER: ', EER
+
+if len(sys.argv) > 3 and sys.argv[3] != 'nodraw':
+	import pylab as pl
+	import os
+	# Plot ROC curve
+	pl.clf()
+	pl.plot(fpr, tpr, label='(EER = %0.4f area = %0.4f)' % (EER, roc_auc))
+	pl.plot([0, 1], [1, 0], 'k--')
+	pl.xlim([0.0, 1.0])
+	pl.ylim([0.0, 1.0])
+	pl.xlabel('False Positive Rate')
+	pl.ylabel('True Positive Rate')
+	pl.title('Receiver operating characteristic example')
+	pl.legend(loc="lower right")
+	pl.show()
