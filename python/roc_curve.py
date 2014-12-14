@@ -6,7 +6,7 @@ speakers = {}
 
 print sys.argv
 
-with open('../ivector-system/ndx/trainModel.ndx') as fin:
+with open('../ivector-system/ndx/trainModel2.ndx') as fin:
     for line in fin:
         data = line.strip().split()
         speaker = data[0]

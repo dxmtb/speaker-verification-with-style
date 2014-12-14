@@ -10,7 +10,7 @@ from sklearn import (manifold, datasets, decomposition, ensemble, lda,
                      random_projection)
 
 def load_data():
-    DIR = './raw'
+    DIR = '../ivector-system/iv/raw_512_new'
     files = os.listdir(DIR)
     speakers = []
 
