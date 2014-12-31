@@ -51,3 +51,8 @@ class SpeakerRecognizer(object):
     def saveUBM(ubmpath):
         # save self.gmmdir/world.gmm and
         pass
+
+if __name__ == '__main__':
+    recognizer = SpeakerRecognizer()
+    print 'Workdir', recognizer.workdir
+    recognizer.trainAndLoadUBM('')
