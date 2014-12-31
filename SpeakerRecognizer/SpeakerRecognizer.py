@@ -3,46 +3,52 @@ import subprocess
 import tempfile
 
 DIR = os.path.dirname(os.path.abspath(__file__))
-SCRIPTS_DIR = os.path.join(DIR, 'scripts')
 BIN_DIR = os.path.join(DIR, 'bin')
-CONFIG_DIR = os.path.join(SCRIPTS_DIR, 'config')
+CONFIG_DIR = os.path.join(DIR, 'cfg')
 
+def check_output(*args):
+    print ' '.join(args[0])
+    print subprocess.call(*args, stderr=subprocess.STDOUT)
 
 class SpeakerRecognizer(object):
-    def __init__(self, workdir):
+    def __init__(self, workdir=None):
         if workdir:
             self.workdir = workdir
         else:
             self.workdir = tempfile.mkdtemp(prefix='speaker_recognizer_')
-        self.mfccdir = os.path.join(self.workdir, 'mfcc')
-        self.gmmdir = os.path.join(self.workdir, 'ubm')
-        self.modeldir = os.path.join(self.workdir, 'model')
-        self.configdir = os.path.join(self.workdir, 'model')
+        self.mfccdir = os.path.join(self.workdir, 'mfcc') + '/'
+        self.gmmdir = os.path.join(self.workdir, 'gmm') + '/'
+        self.matdir = os.path.join(self.workdir, 'mat') + '/'
 
         try:
-            os.mkdir(mfccdir)
-            os.mkdir(gmmdir)
-            os.mkdir(modeldir)
+            os.mkdir(self.mfccdir)
+            os.mkdir(self.gmmdir)
+            os.mkdir(self.matdir)
         except OSError, e:
             if e.errno != errno.EEXIST:
                 raise e
             pass
 
-    def trainAndLoadUBM(wavpath):
-        subprocess.check_output(
+    def trainAndLoadUBM(self, wavpath):
+        check_output(
             [os.path.join(BIN_DIR, 'HCopy'),
-             '-C', 'cfg/hcopy_sph.cfg', wavpath,
-             os.path.join(self.mfccdir, 'ubm.mfcc')])
+             '-C', os.path.join(CONFIG_DIR, 'hcopy_sph.cfg'), wavpath,
+             os.path.join(self.mfccdir, 'ubm.tmp.prm')])
 
-        subprocess.check_output(
+        check_output(
+            [os.path.join(BIN_DIR, 'NormFeat'),
+             '--config', os.path.join(CONFIG_DIR, 'NormFeat_HTK.cfg'),
+             '--featureFilesPath', self.mfccdir])
+
+        check_output(
             [os.path.join(BIN_DIR, 'TrainWorld'),
-             '--config', 'TrainWorld.cfg',
+             '--config', os.path.join(CONFIG_DIR, 'TrainWorld.cfg'),
              '--featureFilesPath', self.mfccdir,
              '--mixtureFilesPath', self.gmmdir])
 
-        subprocess.check_output(
+        check_output(
             [os.path.join(BIN_DIR, 'TotalVariability'),
-             '--config', 'TotalVariability_fast.cfg',
+             '--config', os.path.join(CONFIG_DIR, 'TotalVariability_fast.cfg'),
              '--ndxFilename', 'ubm',
              '--featureFilesPath', self.mfccdir,
              '--mixtureFilesPath', self.gmmdir,
@@ -55,4 +61,4 @@ class SpeakerRecognizer(object):
 if __name__ == '__main__':
     recognizer = SpeakerRecognizer()
     print 'Workdir', recognizer.workdir
-    recognizer.trainAndLoadUBM('')
+    recognizer.trainAndLoadUBM('/home/tb/short.wav')
