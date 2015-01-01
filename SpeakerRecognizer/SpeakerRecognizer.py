@@ -111,8 +111,13 @@ class SpeakerRecognizer(object):
             ret.append([WINDOW * i, WINDOW * (i+1), result])
         return ret
 
-    def saveUBM(ubmpath):
-        # save self.gmmdir/world.gmm and
+    def loadUBM(self, ubmpath):
+        pass
+    def saveUBM(self, ubmpath):
+        pass
+    def loadSpeaker(self, modelpath):
+        pass
+    def saveSpeaker(self, modelpath):
         pass
 
     def extract_feat(self, wavpath, output):
