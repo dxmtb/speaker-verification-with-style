@@ -2,7 +2,8 @@ import tempfile
 import os
 import time
 
-from PyQt4 import QtGui, QtCore
+from OpenGL import GL, GLU
+from PyQt4 import QtGui, QtCore, QtOpenGL
 from PyQt4.phonon import Phonon
 
 from converter import Converter
@@ -35,18 +36,37 @@ class TrainThread(QtCore.QThread):
         print 'trainning'
         self.recognizer.trainAndLoadUBM(self.wavPath)
 
-class RangeBar(QtGui.QGraphicsView):
+class RangeBar(QtOpenGL.QGLWidget):
+    ranges = []
     def __init__(self, *args, **kargs):
         super(RangeBar, self).__init__(*args, **kargs)
-        self.scene = QtGui.QGraphicsScene(self)
-        self.setScene(self.scene)
-        self.scene.setSceneRect(QtCore.QRectF(0, 0, 100, 10))
+        self.setMinimumSize(100, 10)
+
+    def initializeGL(self):
+        GL.glClearColor(0.0, 0.0, 0.0, 1.0)
+        GL.glClearDepth(1.0)
+        GL.glClear(GL.GL_COLOR_BUFFER_BIT)
+        GL.glLoadIdentity()
+
+    def resizeGL(self, w, h):
+        GL.glMatrixMode(GL.GL_PROJECTION)
+        GL.glLoadIdentity()
+        GL.glOrtho(0, 100, 0, 10, -50.0, 50.0)
+        GL.glViewport(0, 0, w, h)
+
+    def paintGL(self):
+        for r in self.ranges:
+            print r
+            st = r[0]
+            ed = r[1]
+            color = r[2]
+            GL.glColor3f(color.red() / 255.0,
+                         color.green() / 255.0,
+                         color.blue() / 255.0)
+            GL.glRectf(st, 0, ed, self.height())
 
     def addRange(self, start, end, color):
-        self.scene.addRect(start, 0, end - start, 10,
-                pen=QtGui.QPen(QtGui.QColor(0, 0, 0, 0)),
-                brush=QtGui.QBrush(QtGui.QColor(color)))
-        print self.scene.sceneRect()
+        self.ranges.append((start, end, color))
 
 class Window(QtGui.QWidget):
     def __init__(self):
@@ -103,7 +123,7 @@ class Window(QtGui.QWidget):
         layout.addWidget(self.progress)
         layout.addWidget(self.speakers)
 
-        self.speakers.addRange(0, 100, 'red')
+        self.speakers.addRange(0, 10, QtGui.QColor('red'))
 
     def tick(self):
         if self.media.state() == Phonon.PlayingState:
