@@ -26,49 +26,92 @@ def dumpAudio(videoPath):
     return path
 
 
-class TrainThread(QtCore.QThread):
+class TrainUBMThread(QtCore.QThread):
     jobDone = QtCore.pyqtSignal(object)
     def __init__(self, recognizer, wavPath):
-        super(TrainThread, self).__init__()
+        super(TrainUBMThread, self).__init__()
         self.recognizer = recognizer
         self.wavPath = wavPath
     def run(self):
         print 'trainning'
         self.recognizer.trainAndLoadUBM(self.wavPath)
 
-class RangeBar(QtOpenGL.QGLWidget):
+class TrainSpeakerThread(QtCore.QThread):
+    jobDone = QtCore.pyqtSignal(object)
+    def __init__(self, recognizer, wavPath, ranges):
+        super(TrainSpeakerThread, self).__init__()
+        self.recognizer = recognizer
+        self.wavPath = wavPath
+        self.ranges = ranges
+    def run(self):
+        print 'training speaker'
+        self.recognizer.trainAndLoadSpeaker(self.wavPath)
+
+class SpeakerBar(QtOpenGL.QGLWidget):
+    dataChanged = QtCore.pyqtSignal(object)
     ranges = []
-    def __init__(self, *args, **kargs):
-        super(RangeBar, self).__init__(*args, **kargs)
+    markingRange = False
+    leftPoint = 0
+    rangelen = 10000
+
+    def __init__(self, linkedMedia, audioPath, recognizer, parent):
+        super(SpeakerBar, self).__init__(parent=parent)
         self.setMinimumSize(100, 10)
+        self.linkedMedia = linkedMedia
+        self.audioPath = audioPath
+        self.recognizer = recognizer
 
     def initializeGL(self):
         GL.glClearColor(0.0, 0.0, 0.0, 1.0)
         GL.glClearDepth(1.0)
-        GL.glClear(GL.GL_COLOR_BUFFER_BIT)
         GL.glLoadIdentity()
 
     def resizeGL(self, w, h):
         GL.glMatrixMode(GL.GL_PROJECTION)
         GL.glLoadIdentity()
-        GL.glOrtho(0, 100, 0, 10, -50.0, 50.0)
+        padding = self.rangelen / 100
+        GL.glOrtho(- padding, self.rangelen + padding, 0, 10, -50.0, 50.0)
         GL.glViewport(0, 0, w, h)
 
     def paintGL(self):
+        if self.hasFocus():
+            GL.glClearColor(0.5, 0.5, 0.5, 1.0)
+            color = QtGui.QColor('yellow')
+        else:
+            GL.glClearColor(0.0, 0.0, 0.0, 1.0)
+            color = QtGui.QColor('red')
+        GL.glClear(GL.GL_COLOR_BUFFER_BIT)
         for r in self.ranges:
-            print r
-            st = r[0]
-            ed = r[1]
-            color = r[2]
+            st = r[0] * self.rangelen / self.linkedMedia.totalTime()
+            ed = r[1] * self.rangelen / self.linkedMedia.totalTime()
             GL.glColor3f(color.red() / 255.0,
                          color.green() / 255.0,
                          color.blue() / 255.0)
             GL.glRectf(st, 0, ed, self.height())
 
-    def addRange(self, start, end, color):
-        self.ranges.append((start, end, color))
+    def addRange(self, start, end):
+        self.ranges.append((start, end))
+
+    def mousePressEvent(self, event):
+        self.setFocus()
+
+    def keyPressEvent(self, event):
+        if type(event) == QtGui.QKeyEvent:
+            if event.key() == 32:  # space
+                if self.markingRange:  # close it
+                    self.addRange(self.leftPoint, self.linkedMedia.currentTime())
+                    self.markingRange = False
+                    self.glDraw()
+                else:
+                    self.markingRange = True
+                    self.leftPoint = self.linkedMedia.currentTime()
+            elif event.key() == 80:  # p for predict
+                self.train = TrainSpeakerThread(self.recognizer,
+                        self.audioPath, self.ranges)
+                self.train.start()
 
 class Window(QtGui.QWidget):
+    speakers = []
     def __init__(self):
         super(Window, self).__init__()
 
@@ -79,11 +122,14 @@ class Window(QtGui.QWidget):
 
         self.trainUBMButton = QtGui.QPushButton('Train UBM', self.functionButtons)
         self.loadUBMButton = QtGui.QPushButton('Load UBM', self.functionButtons)
+        self.addSpeakerButton = QtGui.QPushButton('Add Speaker', self.functionButtons)
 
         self.trainUBMButton.clicked.connect(self.handleTrainUBMButton)
+        self.addSpeakerButton.clicked.connect(self.handleAddSpeakerButton)
 
         self.functionButtons.layout.addWidget(self.trainUBMButton)
         self.functionButtons.layout.addWidget(self.loadUBMButton)
+        self.functionButtons.layout.addWidget(self.addSpeakerButton)
 
         self.media = Phonon.MediaObject(self)
 
@@ -114,16 +160,11 @@ class Window(QtGui.QWidget):
         self.media.stateChanged.connect(self.handleStateChanged)
         self.media.tick.connect(self.tick)
 
-        self.speakers = RangeBar(self)
-
-        layout = QtGui.QVBoxLayout(self)
-        layout.addWidget(self.video, 1)
-        layout.addWidget(self.buttons)
-        layout.addWidget(self.functionButtons)
-        layout.addWidget(self.progress)
-        layout.addWidget(self.speakers)
-
-        self.speakers.addRange(0, 10, QtGui.QColor('red'))
+        self.layout = QtGui.QVBoxLayout(self)
+        self.layout.addWidget(self.video, 1)
+        self.layout.addWidget(self.buttons)
+        self.layout.addWidget(self.functionButtons)
+        self.layout.addWidget(self.progress)
 
     def tick(self):
         if self.media.state() == Phonon.PlayingState:
@@ -135,11 +176,16 @@ class Window(QtGui.QWidget):
             self.media.seek(newValue)
 
     def handleTrainUBMButton(self):
-        self.audioPath = dumpAudio(str(self.videoPath))
-        self.train = TrainThread(self.recognizer, self.audioPath)
+        self.train = TrainUBMThread(self.recognizer, self.audioPath)
         self.train.start()
 
     def handleLoadUBMButton(self):
+        pass
+
+    def handleAddSpeakerButton(self):
+        newBar = SpeakerBar(linkedMedia=self.media, audioPath=self.audioPath,
+                            recognizer=self.recognizer, parent=self)
+        self.layout.addWidget(newBar)
         pass
 
     def handlePlayButton(self):
@@ -159,6 +205,7 @@ class Window(QtGui.QWidget):
                     'video')
             if path:
                 self.videoPath = path
+                self.audioPath = dumpAudio(str(self.videoPath))
                 self.media.setCurrentSource(Phonon.MediaSource(path))
                 self.media.play()
 
