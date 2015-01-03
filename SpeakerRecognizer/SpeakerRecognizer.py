@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import scipy.spatial
 from struct import unpack, pack
+import zipfile
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 BIN_DIR = os.path.join(DIR, 'bin')
@@ -10,9 +11,9 @@ CONFIG_DIR = os.path.join(DIR, 'cfg')
 WINDOW = 1 # seconds window
 
 def check_output(*args):
-    print args[0]
     print ' '.join(args[0])
-    print subprocess.call(*args, stderr=subprocess.STDOUT)
+    #subprocess.call(*args, stderr=subprocess.STDOUT)
+    subprocess.check_output(*args)
 
 class SpeakerRecognizer(object):
     def __init__(self, workdir=None, threshold=0.5, dim=10):
@@ -25,7 +26,7 @@ class SpeakerRecognizer(object):
         self.mfccdir = os.path.join(self.workdir, 'mfcc') + '/'
         self.gmmdir = os.path.join(self.workdir, 'gmm') + '/'
         self.matdir = os.path.join(self.workdir, 'mat') + '/'
-        self.modeldir = os.path.join(self.workdir, 'iv') + '/'
+        self.modeldir = os.path.join(self.workdir, 'model') + '/'
         self.datadir = os.path.join(self.workdir, 'data') + '/'
 
         try:
@@ -40,9 +41,6 @@ class SpeakerRecognizer(object):
             pass
 
     def trainAndLoadUBM(self, wavpath):
-	# generate gmm/world.gmm
-	# generate mat/newMeanMinDiv_it.matx
-	# generate mat/TV.matx
         self.extract_feat(wavpath, 'ubm')
 
         check_output(
@@ -62,8 +60,19 @@ class SpeakerRecognizer(object):
              '--mixtureFilesPath', self.gmmdir,
              '--matrixFilesPath', self.matdir])
 
+    def trainAndLoadSpeakerByRange(self, wavpath, ranges):
+        flist = []
+        for i, (start, end) in enumerate(ranges):
+            name = 'train-speaker-%d' % i
+            new_wav = os.path.join(self.datadir, '%s.wav' % name)
+            self.cut_wav(wavpath, new_wav, start, end)
+            flist.append(new_wav)
+        final_wav = os.path.join(self.datadir, 'train-speaker-final.wav')
+        check_output(['sox'] + flist + [final_wav])
+        self.trainAndLoadSpeaker(final_wav)
+
     def trainAndLoadSpeaker(self, wavpath):
-	# generate iv/speaker.y
+        # generate model/speaker.y
         self.extract_feat(wavpath, 'speaker')
 
         ndx = os.path.join(self.datadir, 'speaker.ndx')
@@ -111,14 +120,35 @@ class SpeakerRecognizer(object):
             ret.append([WINDOW * i, WINDOW * (i+1), result])
         return ret
 
-    def loadUBM(self, ubmpath):
-        pass
     def saveUBM(self, ubmpath):
-        pass
-    def loadSpeaker(self, modelpath):
-        pass
+        files = [('gmm', 'world.gmm'), ('mat', 'newMeanMinDiv_it.matx'),
+            ('mat', 'TV.matx')]
+        self.createZip(files, ubmpath)
+    def loadUBM(self, ubmpath):
+        files = [('gmm', 'world.gmm'), ('mat', 'newMeanMinDiv_it.matx'),
+            ('mat', 'TV.matx')]
+        self.loadZip(files, ubmpath)
     def saveSpeaker(self, modelpath):
-        pass
+        files = [('model', 'speaker.y')]
+        self.createZip(files, modelpath)
+    def loadSpeaker(self, modelpath):
+        files = [('model', 'speaker.y')]
+        self.loadZip(files, modelpath)
+
+    def createZip(self, files, zippath):
+      with zipfile.ZipFile(zippath, "w", zipfile.ZIP_DEFLATED) as zf:
+          for d, f in files:
+              src = os.path.join(getattr(self, d + 'dir'), f)
+              dst = os.path.join(d, f)
+              print 'Add zip: %s -> %s' % (src, dst)
+              zf.write(src, dst)
+
+    def loadZip(self, files, zippath):
+      with zipfile.ZipFile(zippath) as zf:
+          for member in zf.infolist():
+              dst = self.workdir
+              print 'Extract zip: %s -> %s' % (member.filename, dst)
+              zf.extract(member, dst)
 
     def extract_feat(self, wavpath, output):
         check_output(
@@ -152,7 +182,7 @@ class SpeakerRecognizer(object):
 
     def cut_wav(self, wavpath, new_wav, start, end):
         check_output(
-            ['ffmpeg', '-i', wavpath, '-y',
+            ['ffmpeg', '-i', wavpath, '-y', '-v', 'quiet',
              '-ss', str(start), '-t', str(end-start),
              new_wav])
 
@@ -162,10 +192,25 @@ class SpeakerRecognizer(object):
             row, col = unpack('i'*2, fin.read(8))
             vecs = unpack('d'*(row*col), fin.read(8 * row * col))
             return vecs
+    def clear(self):
+        import shutil
+        shutil.rmtree(os.path.join(self.workdir, '*'))
 
 if __name__ == '__main__':
     recognizer = SpeakerRecognizer()
     print 'Workdir', recognizer.workdir
     recognizer.trainAndLoadUBM('/home/tb/short.wav')
     recognizer.trainAndLoadSpeaker('/home/tb/speaker.wav')
+    print recognizer.recognize('/home/tb/short.wav')
+    # raw_input('Enter to continue')
+    recognizer.saveUBM('ubm.zip')
+    recognizer.saveSpeaker('speaker.zip')
+    recognizer = SpeakerRecognizer()
+    recognizer.loadUBM('ubm.zip')
+    recognizer.loadSpeaker('speaker.zip')
+    print recognizer.recognize('/home/tb/short.wav')
+    recognizer = SpeakerRecognizer()
+    recognizer.loadUBM('ubm.zip')
+    recognizer.trainAndLoadSpeakerByRange('/home/tb/short.wav',
+        [(28, 29.3), (30.5, 37), (29.3, 30.5), (37, 38)])
     print recognizer.recognize('/home/tb/short.wav')
