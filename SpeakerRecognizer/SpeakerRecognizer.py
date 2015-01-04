@@ -13,7 +13,7 @@ WINDOW = 1 # seconds window
 def check_output(*args):
     print ' '.join(args[0])
     #subprocess.call(*args, stderr=subprocess.STDOUT)
-    subprocess.check_output(*args)
+    print subprocess.check_output(*args)
 
 class SpeakerRecognizer(object):
     def __init__(self, workdir=None, threshold=0.5, dim=10):

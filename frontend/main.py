@@ -168,7 +168,8 @@ class Window(QtGui.QWidget):
         self.media = Phonon.MediaObject(self)
 
         self.video = Phonon.VideoWidget(self)
-        self.video.setMinimumSize(480, 320)
+        self.video.setAspectRatio(Phonon.VideoWidget.AspectRatioWidget)
+        self.video.setMinimumSize(640, 360)
 
         self.audio = Phonon.AudioOutput(Phonon.VideoCategory, self)
 
