@@ -35,6 +35,7 @@ class TrainUBMThread(QtCore.QThread):
     def run(self):
         print 'trainning'
         self.recognizer.trainAndLoadUBM(self.wavPath)
+        self.jobDone.emit(None)
 
 class TrainSpeakerThread(QtCore.QThread):
     jobDone = QtCore.pyqtSignal(object)
@@ -45,13 +46,22 @@ class TrainSpeakerThread(QtCore.QThread):
         self.ranges = ranges
     def run(self):
         print 'training speaker'
-        self.recognizer.trainAndLoadSpeaker(self.wavPath)
+        self.recognizer.trainAndLoadSpeakerByRange(self.wavPath, self.ranges)
+        self.jobDone.emit(None)
+
+class PredictSpeakerThread(QtCore.QThread):
+    jobDone = QtCore.pyqtSignal(object)
+    def __init__(self, recognizer, wavPath):
+        super(PredictSpeakerThread, self).__init__()
+        self.recognizer = recognizer
+        self.wavPath = wavPath
+    def run(self):
+        print 'predicting speaker'
+        result = self.recognizer.recognize(self.wavPath)
+        self.jobDone.emit(result)
 
 class SpeakerBar(QtOpenGL.QGLWidget):
     dataChanged = QtCore.pyqtSignal(object)
-    ranges = []
-    markingRange = False
-    leftPoint = 0
     rangelen = 10000
 
     def __init__(self, linkedMedia, audioPath, recognizer, parent):
@@ -60,6 +70,9 @@ class SpeakerBar(QtOpenGL.QGLWidget):
         self.linkedMedia = linkedMedia
         self.audioPath = audioPath
         self.recognizer = recognizer
+        self.ranges = []
+        self.markingRange = False
+        self.leftPoint = 0
 
     def initializeGL(self):
         GL.glClearColor(0.0, 0.0, 0.0, 1.0)
@@ -106,9 +119,26 @@ class SpeakerBar(QtOpenGL.QGLWidget):
                     self.markingRange = True
                     self.leftPoint = self.linkedMedia.currentTime()
             elif event.key() == 80:  # p for predict
+                self.predict = PredictSpeakerThread(self.recognizer,
+                        self.audioPath)
+                self.predict.jobDone.connect(self.handlePredict)
+                self.predict.start()
+            elif event.key() == 84:  # t for train
+                ranges = [tuple([y / 1000.0 for y in x]) for x in self.ranges]
                 self.train = TrainSpeakerThread(self.recognizer,
-                        self.audioPath, self.ranges)
+                        self.audioPath, ranges)
+                self.train.connect(self.handleTrainSpeakerDone)
                 self.train.start()
+
+    def handleTrainSpeakerDone(self):
+        QtGui.QMessageBox.information(self, 'Done!', 'Speaker Trained',
+                QtGui.QMessageBox.Ok)
+
+    def handlePredict(self, result):
+        for r in result:
+            if r[2] > 0:
+                self.addRange(int(r[0] * 1000), int(r[1] * 1000))
+        self.glDraw()
 
 class Window(QtGui.QWidget):
     speakers = []
@@ -122,13 +152,17 @@ class Window(QtGui.QWidget):
 
         self.trainUBMButton = QtGui.QPushButton('Train UBM', self.functionButtons)
         self.loadUBMButton = QtGui.QPushButton('Load UBM', self.functionButtons)
+        self.saveUBMButton = QtGui.QPushButton('Save UBM', self.functionButtons)
         self.addSpeakerButton = QtGui.QPushButton('Add Speaker', self.functionButtons)
 
         self.trainUBMButton.clicked.connect(self.handleTrainUBMButton)
+        self.loadUBMButton.clicked.connect(self.handleLoadUBMButton)
+        self.saveUBMButton.clicked.connect(self.handleSaveUBMButton)
         self.addSpeakerButton.clicked.connect(self.handleAddSpeakerButton)
 
         self.functionButtons.layout.addWidget(self.trainUBMButton)
         self.functionButtons.layout.addWidget(self.loadUBMButton)
+        self.functionButtons.layout.addWidget(self.saveUBMButton)
         self.functionButtons.layout.addWidget(self.addSpeakerButton)
 
         self.media = Phonon.MediaObject(self)
@@ -177,16 +211,29 @@ class Window(QtGui.QWidget):
 
     def handleTrainUBMButton(self):
         self.train = TrainUBMThread(self.recognizer, self.audioPath)
+        self.train.jobDone.connect(self.handleTrainUBMDone)
         self.train.start()
 
+    def handleTrainUBMDone(self):
+        QtGui.QMessageBox.information(self, 'Done!', 'UBM Trained',
+                QtGui.QMessageBox.Ok)
+
     def handleLoadUBMButton(self):
-        pass
+        path = QtGui.QFileDialog.getOpenFileName(self,
+                self.loadUBMButton.text(), 'data')
+        if path:
+            self.recognizer.loadUBM(unicode(path))
+
+    def handleSaveUBMButton(self):
+        path = QtGui.QFileDialog.getSaveFileName(self,
+                self.loadUBMButton.text(), 'data')
+        if path:
+            self.recognizer.saveUBM(unicode(path))
 
     def handleAddSpeakerButton(self):
         newBar = SpeakerBar(linkedMedia=self.media, audioPath=self.audioPath,
                             recognizer=self.recognizer, parent=self)
         self.layout.addWidget(newBar)
-        pass
 
     def handlePlayButton(self):
         if self.media.state() == Phonon.PlayingState:
@@ -205,7 +252,7 @@ class Window(QtGui.QWidget):
                     'video')
             if path:
                 self.videoPath = path
-                self.audioPath = dumpAudio(str(self.videoPath))
+                self.audioPath = dumpAudio(unicode(self.videoPath))
                 self.media.setCurrentSource(Phonon.MediaSource(path))
                 self.media.play()
 
