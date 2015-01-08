@@ -35,6 +35,7 @@ class TrainUBMThread(QtCore.QThread):
     def run(self):
         print 'trainning'
         self.recognizer.trainAndLoadUBM(self.wavPath)
+        self.jobDone.emit(None)
 
 class TrainSpeakerThread(QtCore.QThread):
     jobDone = QtCore.pyqtSignal(object)
@@ -46,6 +47,7 @@ class TrainSpeakerThread(QtCore.QThread):
     def run(self):
         print 'training speaker'
         self.recognizer.trainAndLoadSpeakerByRange(self.wavPath, self.ranges)
+        self.jobDone.emit(None)
 
 class PredictSpeakerThread(QtCore.QThread):
     jobDone = QtCore.pyqtSignal(object)
@@ -125,7 +127,12 @@ class SpeakerBar(QtOpenGL.QGLWidget):
                 ranges = [tuple([y / 1000.0 for y in x]) for x in self.ranges]
                 self.train = TrainSpeakerThread(self.recognizer,
                         self.audioPath, ranges)
+                self.train.connect(self.handleTrainSpeakerDone)
                 self.train.start()
+
+    def handleTrainSpeakerDone(self):
+        QtGui.QMessageBox.information(self, 'Done!', 'Speaker Trained',
+                QtGui.QMessageBox.Ok)
 
     def handlePredict(self, result):
         for r in result:
@@ -205,7 +212,12 @@ class Window(QtGui.QWidget):
 
     def handleTrainUBMButton(self):
         self.train = TrainUBMThread(self.recognizer, self.audioPath)
+        self.train.jobDone.connect(self.handleTrainUBMDone)
         self.train.start()
+
+    def handleTrainUBMDone(self):
+        QtGui.QMessageBox.information(self, 'Done!', 'UBM Trained',
+                QtGui.QMessageBox.Ok)
 
     def handleLoadUBMButton(self):
         path = QtGui.QFileDialog.getOpenFileName(self,
