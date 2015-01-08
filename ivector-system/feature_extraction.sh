@@ -1,3 +1,5 @@
+mkdir -p data/prm
+
 echo "Extract MFCC :`date`"
 COMMAND_LINE="bin/HCopy -C cfg/hcopy_sph.cfg -T 1 -S data/data_wav.scp"
 echo $COMMAND_LINE

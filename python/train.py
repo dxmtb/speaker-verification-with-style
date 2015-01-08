@@ -10,7 +10,7 @@ import gflags
 FLAGS = gflags.FLAGS
 gflags.DEFINE_string('iv_path', '../ivector-system/iv/raw_512', 'path to iv')
 gflags.DEFINE_string('task', 'train', 'train or dump(then test)')
-gflags.DEFINE_string('model', 'linear', 'bias or projection')
+gflags.DEFINE_string('model', 'bias', 'bias or projection')
 
 def load_data(fname):
     with open(fname) as fin:
@@ -18,22 +18,23 @@ def load_data(fname):
 
     X = [[], [], []]
     dim = None
-    for speaker in speakers:
-        tmp = []
-        for label in ['01', '03', '06']:
-            path = '%s/%s_%s.y' % (FLAGS.iv_path, speaker, label)
-            iv = read_iv(path)
-            if np.isnan(iv[0]):
-                print 'Wrong: ', path
-                continue
-            tmp.append(iv)
-            if dim:
-                assert len(iv) == dim
-            else:
-                dim = len(iv)
-        if len(tmp) == 3:
-            for i, x in enumerate(tmp):
-                X[i].append(x)
+    for frame in ['0']:
+        for speaker in speakers:
+            tmp = []
+            for label in ['01', '03', '06']:
+                path = '%s/%s_%s-%s.y' % (FLAGS.iv_path, speaker, label, frame)
+                iv = read_iv(path)
+                if np.isnan(iv[0]):
+                    print 'Wrong: ', path
+                    continue
+                tmp.append(iv)
+                if dim:
+                    assert len(iv) == dim
+                else:
+                    dim = len(iv)
+            if len(tmp) == 3:
+                for i, x in enumerate(tmp):
+                    X[i].append(x)
 
     X = np.array(X, dtype=theano.config.floatX)
     return X
@@ -164,28 +165,29 @@ def do_test():
     os.system('mkdir -p %s_new' % (FLAGS.iv_path))
 
     dim = None
-    for speaker in speakers:
-        before = None
-        for label in ['06', '01', '03']:
-            path = '%s/%s_%s.y' % (FLAGS.iv_path, speaker, label)
-            iv = read_iv(path)
-            if np.isnan(iv[0]):
-                dump_iv('%s_new/%s_%s.y' % (FLAGS.iv_path, speaker, label), iv)
-                print 'Wrong: ', path
-                continue
-            if dim:
-                assert len(iv) == dim
-            else:
-                dim = len(iv)
-            if label == '01':
-                iv = transform0(iv)
-                #iv = before
-            elif label == '03':
-                iv = transform1(iv)
-                #iv = before
-            else:
-                before = iv
-            dump_iv('%s_new/%s_%s.y' % (FLAGS.iv_path, speaker, label), iv)
+    for frame in ['0', '1']:
+        for speaker in speakers:
+            before = None
+            for label in ['06', '01', '03']:
+                path = '%s/%s_%s-%s.y' % (FLAGS.iv_path, speaker, label, frame)
+                iv = read_iv(path)
+                if np.isnan(iv[0]):
+                    dump_iv('%s_new/%s_%s-%s.y' % (FLAGS.iv_path, speaker, label, frame), iv)
+                    print 'Wrong: ', path
+                    continue
+                if dim:
+                    assert len(iv) == dim
+                else:
+                    dim = len(iv)
+                if label == '01':
+                    iv = transform0(iv)
+                    #iv = before
+                elif label == '03':
+                    iv = transform1(iv)
+                    #iv = before
+                else:
+                    before = iv
+                dump_iv('%s_new/%s_%s-%s.y' % (FLAGS.iv_path, speaker, label, frame), iv)
 
     logging.info('Dumped new ivectors to %s_new.' % (FLAGS.iv_path))
 
